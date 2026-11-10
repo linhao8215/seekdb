@@ -148,6 +148,7 @@ private:
       uint64_t data_table_id,
       ObIArray<ObTableSchema> &table_schemas);
 private:
+  int do_init_global_stat();
   ObDDLService &ddl_service_;
   ObRuntimeDDLService &runtime_ddl_service_;
   int64_t begin_ts_;

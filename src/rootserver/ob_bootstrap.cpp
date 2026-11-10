@@ -16,9 +16,7 @@
 
 #define USING_LOG_PREFIX BOOTSTRAP
 
-#if defined(__EMSCRIPTEN__)
 #include "common/ob_timeout_ctx.h"
-#endif
 #include "lib/stat/ob_diagnostic_info_guard.h"
 #include "rootserver/ob_bootstrap.h"
 #include "rootserver/ob_runtime_ddl_service.h"
@@ -669,6 +667,27 @@ int ObBootstrap::check_is_already_bootstrap(bool &is_bootstrap)
 
 int ObBootstrap::init_global_stat()
 {
+  int ret = do_init_global_stat();
+  if (OB_TIMEOUT == ret) {
+    // Cold storage I/O can exhaust the short RPC budget used by global-stat
+    // updates. Retry only this idempotent bootstrap step with the internal SQL
+    // budget instead of increasing the timeout for every RS operation.
+    ObTimeoutCtx timeout_ctx;
+    const int64_t timeout_us = config::internal_sql_execute_timeout();
+    LOG_WARN("global stat initialization timed out, retry with internal SQL timeout",
+        KR(ret), K(timeout_us));
+    if (OB_FAIL(timeout_ctx.set_timeout(timeout_us))) {
+    } else if (OB_FAIL(timeout_ctx.set_trx_timeout_us(timeout_us))) {
+    } else {
+      ret = do_init_global_stat();
+    }
+  }
+  BOOTSTRAP_CHECK_SUCCESS();
+  return ret;
+}
+
+int ObBootstrap::do_init_global_stat()
+{
   int ret = OB_SUCCESS;
   ObMySQLProxy &sql_proxy = ddl_service_.get_sql_proxy();
   ObMySQLTransaction trans;
@@ -702,7 +721,6 @@ int ObBootstrap::init_global_stat()
       } else {}
     }
   }
-  BOOTSTRAP_CHECK_SUCCESS();
   return ret;
 }
 
